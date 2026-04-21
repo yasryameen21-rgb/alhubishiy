@@ -1,0 +1,17 @@
+{
+  "name": "alhabeshi-stores",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Alhabeshi Stores website with local JSON API for Render deployment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

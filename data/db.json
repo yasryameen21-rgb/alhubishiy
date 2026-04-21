@@ -1,0 +1,159 @@
+{
+  "products": [
+    {
+      "id": "prd_cement_001",
+      "name": "أسمنت وطني",
+      "category": "مواد البناء",
+      "unit": "كيس",
+      "price": 4200,
+      "stock": 45,
+      "discount": 0,
+      "description": "أسمنت عالي الجودة مناسب لأعمال البناء والتشطيب.",
+      "image_url": "",
+      "external_link": "",
+      "is_new": false,
+      "created_at": 1763600000000,
+      "updated_at": 1763600000000
+    },
+    {
+      "id": "prd_pipe_001",
+      "name": "ماسورة PVC 4 بوصة",
+      "category": "السباكة",
+      "unit": "قطعة",
+      "price": 7800,
+      "stock": 18,
+      "discount": 5,
+      "description": "ماسورة سباكة قوية ومناسبة لمشاريع المياه والصرف.",
+      "image_url": "",
+      "external_link": "",
+      "is_new": true,
+      "created_at": 1763601000000,
+      "updated_at": 1763601000000
+    },
+    {
+      "id": "prd_wire_001",
+      "name": "سلك كهرباء 6 مم",
+      "category": "الكهرباء",
+      "unit": "لفة",
+      "price": 25500,
+      "stock": 9,
+      "discount": 8,
+      "description": "سلك نحاس معزول للاستخدامات المنزلية والتجارية.",
+      "image_url": "",
+      "external_link": "",
+      "is_new": true,
+      "created_at": 1763602000000,
+      "updated_at": 1763602000000
+    },
+    {
+      "id": "prd_drill_001",
+      "name": "مثقاب يدوي",
+      "category": "عدد ومعدات",
+      "unit": "قطعة",
+      "price": 18500,
+      "stock": 6,
+      "discount": 0,
+      "description": "مثقاب عملي للاستخدام اليومي في الورش والمنازل.",
+      "image_url": "",
+      "external_link": "",
+      "is_new": false,
+      "created_at": 1763603000000,
+      "updated_at": 1763603000000
+    },
+    {
+      "id": "prd_paint_001",
+      "name": "دهان أبيض داخلي",
+      "category": "أخرى",
+      "unit": "علبة",
+      "price": 9600,
+      "stock": 12,
+      "discount": 10,
+      "description": "دهان اقتصادي بتغطية ممتازة للمساحات الداخلية.",
+      "image_url": "",
+      "external_link": "",
+      "is_new": false,
+      "created_at": 1763604000000,
+      "updated_at": 1763604000000
+    }
+  ],
+  "orders": [
+    {
+      "id": "ord_demo_001",
+      "customer_name": "أحمد محمد",
+      "phone": "771111111",
+      "is_member": true,
+      "member_id": "M-1001",
+      "items": "[{\"id\": \"prd_cement_001\", \"name\": \"أسمنت وطني\", \"unit\": \"كيس\", \"quantity\": 10, \"price\": 4200, \"total\": 42000}, {\"id\": \"prd_pipe_001\", \"name\": \"ماسورة PVC 4 بوصة\", \"unit\": \"قطعة\", \"quantity\": 2, \"price\": 7410, \"total\": 14820}]",
+      "total": 56820,
+      "status": "جديد",
+      "notes": "التسليم بعد العصر",
+      "order_mode": "delivery",
+      "delivery_address": "إب - المجمعة - جوار السوق",
+      "delivery_time": "بعد العصر",
+      "payment_method": "cash",
+      "payment_reference": "",
+      "notification_email": "yamenameen97@gmail.com",
+      "order_date": 1763605000000,
+      "created_at": 1763605000000,
+      "updated_at": 1763605000000
+    }
+  ],
+  "customers": [
+    {
+      "id": "cus_demo_001",
+      "name": "أحمد محمد",
+      "phone": "771111111",
+      "address": "إب - المجمعة",
+      "balance": 0,
+      "email": "",
+      "notes": "عميل مشترك",
+      "is_member": true,
+      "created_at": 1763605000000,
+      "updated_at": 1763605000000
+    },
+    {
+      "id": "cus_demo_002",
+      "name": "عبدالله علي",
+      "phone": "772222222",
+      "address": "إب - شارع العدين",
+      "balance": 18500,
+      "email": "",
+      "notes": "يحتاج متابعة سداد",
+      "is_member": false,
+      "created_at": 1763606000000,
+      "updated_at": 1763606000000
+    }
+  ],
+  "offers": [
+    {
+      "id": "off_demo_001",
+      "title": "خصم على مستلزمات السباكة",
+      "description": "خصم خاص على مجموعة مختارة من مواسير وإكسسوارات السباكة.",
+      "type": "عرض",
+      "discount_percent": 10,
+      "is_active": true,
+      "created_at": 1763607000000,
+      "updated_at": 1763607000000
+    },
+    {
+      "id": "off_demo_002",
+      "title": "مسابقة أفضل عميل أسبوعي",
+      "description": "شارك بطلبك هذا الأسبوع وادخل السحب على هدية مجانية.",
+      "type": "مسابقة",
+      "discount_percent": 0,
+      "is_active": true,
+      "created_at": 1763608000000,
+      "updated_at": 1763608000000
+    }
+  ],
+  "chat_messages": [
+    {
+      "id": "msg_demo_001",
+      "sender_name": "الإدارة",
+      "message": "أهلًا بيكم في دردشة محلات الحبيشي 👋",
+      "is_admin": true,
+      "created_at": 1763609000000,
+      "updated_at": 1763609000000
+    }
+  ]
+}
