@@ -332,6 +332,9 @@
       <li><a href="#" onclick="switchTab('notifications', this)">
         <i class="fas fa-bell"></i> الإشعارات
       </a></li>
+      <li><a href="#" onclick="switchTab('subscribers', this)">
+        <i class="fas fa-user-check"></i> المشتركين
+      </a></li>
       <li><a href="#" onclick="switchTab('offers-admin', this)">
         <i class="fas fa-tags"></i> العروض
       </a></li>
@@ -496,6 +499,14 @@
         <input type="file" id="importExcelFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importProductsFromExcel(this)">
       </div>
 
+      <div class="card mb-20">
+        <div class="card-header"><i class="fas fa-cloud-upload-alt"></i> رفع منتج جديد بسرعة</div>
+        <div class="card-body">
+          <p style="margin-bottom:15px;color:#6c757d">يمكنك إضافة اسم المنتج والسعر والكمية والملاحظة وصورة المنتج، وعند الحفظ يصل إشعار بريدي للمشتركين تلقائياً إذا كان البريد مفعلًا.</p>
+          <button class="btn btn-success" onclick="showAddProductModal()"><i class="fas fa-plus"></i> فتح نموذج رفع المنتج</button>
+        </div>
+      </div>
+
       <div id="productsList">
         <div style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</div>
       </div>
@@ -555,6 +566,38 @@
 
       <div class="card mb-20">
         <div class="card-header">
+          <i class="fas fa-envelope-circle-check"></i> إرسال بريد جماعي للمشتركين
+        </div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+            <div class="form-group">
+              <label class="form-label">عنوان الرسالة</label>
+              <input id="notifEmailSubject" class="form-control" placeholder="مثال: أحدث الأصناف الجديدة وصلت الآن">
+            </div>
+            <div class="form-group">
+              <label class="form-label">زر الرابط الاختياري</label>
+              <input id="notifEmailLink" class="form-control" placeholder="https://example.com/new-products.html">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label class="form-label">نص البريد</label>
+              <textarea id="notifEmailMessage" class="form-control" rows="5" placeholder="اكتب نص البريد الذي سيصل للمشتركين...
+مثال: وصلتنا منتجات جديدة وعروض حصرية، زوروا صفحة الأصناف الجديدة الآن."></textarea>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button class="btn btn-primary" onclick="sendNewsletterEmails()">
+              <i class="fas fa-paper-plane"></i> إرسال للمشتركين
+            </button>
+            <button class="btn btn-outline" onclick="previewNewsletterEmail()">
+              <i class="fas fa-eye"></i> معاينة البريد
+            </button>
+            <span id="newsletterAudienceCount" style="color:#6c757d; font-size:.85rem;">جاري حساب عدد المستلمين...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-20">
+        <div class="card-header">
           <i class="fas fa-paper-plane"></i> إرسال إشعار جماعي للمديونين
         </div>
         <div class="card-body">
@@ -602,6 +645,94 @@
         </h3>
         <div id="notifHistory">
           <p style="color:#6c757d; text-align:center; padding:20px;">لا توجد إشعارات مرسلة بعد</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Subscribers Tab -->
+    <div class="tab-content" id="tab-subscribers">
+      <h2 class="section-title"><i class="fas fa-user-check" style="color:#27ae60"></i> إدارة المشتركين والإشعارات البريدية</h2>
+
+      <div class="stats-grid" style="margin-bottom:20px;">
+        <div class="stat-card" style="border-color:#27ae60">
+          <div class="stat-icon" style="background:rgba(39,174,96,0.1)">📧</div>
+          <div class="stat-info">
+            <div class="stat-value" id="subsNewsletterCount">0</div>
+            <div class="stat-label">مشتركو البريد</div>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:#2e86c1">
+          <div class="stat-icon" style="background:rgba(46,134,193,0.1)">👥</div>
+          <div class="stat-info">
+            <div class="stat-value" id="subsMembersCount">0</div>
+            <div class="stat-label">أعضاء الصفحة</div>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:#f39c12">
+          <div class="stat-icon" style="background:rgba(243,156,18,0.1)">🔔</div>
+          <div class="stat-info">
+            <div class="stat-value" id="subsActiveAudience">0</div>
+            <div class="stat-label">الإشعارات المفعلة</div>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:#8e44ad">
+          <div class="stat-icon" style="background:rgba(142,68,173,0.1)">📬</div>
+          <div class="stat-info">
+            <div class="stat-value" id="subsReachCount">0</div>
+            <div class="stat-label">إجمالي الوصول</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-20">
+        <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <input id="subscriberSearch" class="form-control" style="min-width:260px" placeholder="ابحث بالاسم أو البريد أو المصدر" oninput="filterSubscribersAdmin()">
+            <button class="btn btn-success" onclick="showAddSubscriberModal()"><i class="fas fa-plus"></i> إضافة مشترك بريد</button>
+          </div>
+          <div style="color:#6c757d;font-size:.88rem;">يمكنك من هنا متابعة المشتركين وتفعيل أو إيقاف الإشعارات البريدية.</div>
+        </div>
+      </div>
+
+      <div class="card mb-20">
+        <div class="card-header"><i class="fas fa-id-badge"></i> أعضاء الصفحة المسجلون</div>
+        <div class="table-container" style="box-shadow:none;">
+          <table>
+            <thead>
+              <tr>
+                <th>الاسم</th>
+                <th>الجوال</th>
+                <th>البريد</th>
+                <th>الإشعارات</th>
+                <th>تاريخ التسجيل</th>
+                <th>إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="membersAdminTableBody">
+              <tr><td colspan="6" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><i class="fas fa-envelope-open-text"></i> مشتركو البريد الإضافيون</div>
+        <div class="table-container" style="box-shadow:none;">
+          <table>
+            <thead>
+              <tr>
+                <th>الاسم</th>
+                <th>البريد الإلكتروني</th>
+                <th>المصدر</th>
+                <th>الحالة</th>
+                <th>تاريخ الإضافة</th>
+                <th>إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="subscribersTableBody">
+              <tr><td colspan="6" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -694,8 +825,8 @@
           <input type="number" id="pDiscount" class="form-control" placeholder="0" min="0" max="100">
         </div>
         <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">الوصف</label>
-          <textarea id="pDesc" class="form-control" rows="2" placeholder="وصف المنتج..."></textarea>
+          <label class="form-label">الملاحظة / وصف مختصر</label>
+          <textarea id="pDesc" class="form-control" rows="2" placeholder="اكتب ملاحظة أو وصف مختصر للمنتج..."></textarea>
         </div>
         <div class="form-group" style="grid-column:1/-1">
           <label class="form-label">رابط صورة المنتج</label>
@@ -779,6 +910,44 @@
   </div>
 </div>
 
+<!-- Modal: Add Subscriber -->
+<div class="modal-overlay" id="addSubscriberModal" style="display:none">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <span><i class="fas fa-envelope-open-text"></i> <span id="subscriberModalTitle">إضافة مشترك بريد</span></span>
+      <button class="modal-close" onclick="closeModal('addSubscriberModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editSubscriberId">
+      <div class="form-group">
+        <label class="form-label">الاسم</label>
+        <input type="text" id="subscriberName" class="form-control" placeholder="اسم المشترك">
+      </div>
+      <div class="form-group">
+        <label class="form-label">البريد الإلكتروني *</label>
+        <input type="email" id="subscriberEmail" class="form-control" placeholder="name@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">المصدر</label>
+        <select id="subscriberSource" class="form-control">
+          <option value="admin">إضافة من الإدارة</option>
+          <option value="page">اشتراك من الصفحة</option>
+          <option value="member">عضو مسجل</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-check">
+          <input type="checkbox" id="subscriberActive" checked> اشتراك نشط
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-success" onclick="saveSubscriber()"><i class="fas fa-save"></i> حفظ</button>
+      <button class="btn btn-outline" onclick="closeModal('addSubscriberModal')">إلغاء</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Add Offer -->
 <div class="modal-overlay" id="addOfferModal" style="display:none">
   <div class="modal" style="max-width:500px">
@@ -836,9 +1005,13 @@
   let allProducts = [];
   let allCustomers = [];
   let allOffers = [];
+  let allMembers = [];
+  let allSubscribers = [];
   let filteredOrders = [];
   let filteredProducts = [];
   let filteredCustomers = [];
+  let filteredMembers = [];
+  let filteredSubscribers = [];
   const MODERATION_KEY = 'hiba_moderation_v1';
 
   // ===================
@@ -879,7 +1052,8 @@
     else if (name === 'products') loadProductsAdmin();
     else if (name === 'customers') loadCustomers();
     else if (name === 'debtors') loadDebtors();
-    else if (name === 'notifications') { loadDebtors(); loadModerationSettings(); }
+    else if (name === 'notifications') { loadDebtors(); loadModerationSettings(); loadSubscribersAdmin(); }
+    else if (name === 'subscribers') loadSubscribersAdmin();
     else if (name === 'offers-admin') loadOffersAdmin();
   }
 
@@ -1582,6 +1756,8 @@
       to: name,
       phone,
       amount: balance,
+      channel: '📱 تذكير مديونية',
+      meta: phone || 'بدون رقم',
       message: msg,
       time: new Date().toLocaleString('ar-YE'),
       status: 'تم الإرسال'
@@ -1603,8 +1779,14 @@
       const personalMsg = msg.replace('[الاسم]', c.name).replace('[المبلغ]', c.balance?.toLocaleString('ar-YE'));
       notifHistory.unshift({
         id: Date.now() + Math.random(),
-        to: c.name, phone: c.phone, amount: c.balance,
-        message: personalMsg, time: new Date().toLocaleString('ar-YE'), status: 'تم الإرسال'
+        to: c.name,
+        phone: c.phone,
+        amount: c.balance,
+        channel: '📱 إشعار جماعي',
+        meta: c.phone || 'بدون رقم',
+        message: personalMsg,
+        time: new Date().toLocaleString('ar-YE'),
+        status: 'تم الإرسال'
       });
     });
 
@@ -1627,16 +1809,258 @@
     }
     hist.innerHTML = notifHistory.map(n => `
       <div class="notification-item sent">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:5px; flex-wrap:wrap;">
           <strong>${n.to}</strong>
           <span class="badge badge-success">✅ ${n.status}</span>
         </div>
         <div style="font-size:0.8rem; color:#6c757d; margin-bottom:5px;">
-          ${n.phone} • ${n.time}
+          ${(n.channel || 'إشعار')} ${n.meta ? '• ' + n.meta : ''} • ${n.time}
         </div>
-        <div style="font-size:0.85rem; background:#f8f9fa; padding:8px; border-radius:8px;">${n.message}</div>
+        <div style="font-size:0.85rem; background:#f8f9fa; padding:8px; border-radius:8px; white-space:pre-line;">${n.message}</div>
       </div>
     `).join('');
+  }
+
+  function updateSubscriberAudienceInfo() {
+    const memberEmails = new Map();
+    const disabledMemberEmails = new Set();
+    allMembers.forEach(member => {
+      const email = String(member.email || '').trim().toLowerCase();
+      if (!email || !member.is_active) return;
+      if (member.wants_notifications) memberEmails.set(email, member.full_name || '');
+      else disabledMemberEmails.add(email);
+    });
+
+    const extraSubscribers = allSubscribers.filter(sub => {
+      const email = String(sub.email || '').trim().toLowerCase();
+      return email && sub.is_active && !memberEmails.has(email) && !disabledMemberEmails.has(email);
+    });
+
+    const activeAudience = memberEmails.size + extraSubscribers.length;
+    const audienceLabel = document.getElementById('newsletterAudienceCount');
+    if (audienceLabel) {
+      audienceLabel.textContent = activeAudience
+        ? `سيصل البريد حالياً إلى ${activeAudience} مستلم/مستلمة`
+        : 'لا يوجد مشتركون نشطون حالياً';
+    }
+
+    const subsNewsletterCount = document.getElementById('subsNewsletterCount');
+    const subsMembersCount = document.getElementById('subsMembersCount');
+    const subsActiveAudience = document.getElementById('subsActiveAudience');
+    const subsReachCount = document.getElementById('subsReachCount');
+    if (subsNewsletterCount) subsNewsletterCount.textContent = allSubscribers.length;
+    if (subsMembersCount) subsMembersCount.textContent = allMembers.length;
+    if (subsActiveAudience) subsActiveAudience.textContent = allMembers.filter(m => m.is_active && m.wants_notifications).length;
+    if (subsReachCount) subsReachCount.textContent = activeAudience;
+  }
+
+  async function loadSubscribersAdmin() {
+    try {
+      const [subsData, membersData] = await Promise.all([
+        apiGet('newsletter_subscribers', { limit: 300 }),
+        apiGet('members', { limit: 300 })
+      ]);
+      allSubscribers = subsData.data || [];
+      allMembers = membersData.data || [];
+      filterSubscribersAdmin();
+      updateSubscriberAudienceInfo();
+    } catch (e) {
+      showToast('خطأ في تحميل المشتركين', 'error');
+    }
+  }
+
+  function filterSubscribersAdmin() {
+    const q = (document.getElementById('subscriberSearch')?.value || '').trim().toLowerCase();
+    filteredMembers = allMembers.filter(member => {
+      const hay = `${member.full_name || ''} ${member.phone || ''} ${member.email || ''}`.toLowerCase();
+      return !q || hay.includes(q);
+    });
+    filteredSubscribers = allSubscribers.filter(sub => {
+      const hay = `${sub.full_name || ''} ${sub.email || ''} ${sub.source || ''}`.toLowerCase();
+      return !q || hay.includes(q);
+    });
+    renderMembersAdminTable();
+    renderSubscribersTable();
+    updateSubscriberAudienceInfo();
+  }
+
+  function renderMembersAdminTable() {
+    const tbody = document.getElementById('membersAdminTableBody');
+    if (!tbody) return;
+    if (!filteredMembers.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#6c757d">لا يوجد أعضاء مطابقون</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filteredMembers.map(member => `
+      <tr>
+        <td><strong>${member.full_name || '-'}</strong></td>
+        <td>${member.phone || '-'}</td>
+        <td>${member.email || '-'}</td>
+        <td>${member.wants_notifications ? '<span class="badge badge-success">🔔 مفعلة</span>' : '<span class="badge badge-dark">🔕 متوقفة</span>'}</td>
+        <td>${formatDateShort(member.created_at)}</td>
+        <td>
+          <button class="btn-action ${member.wants_notifications ? 'btn-del' : 'btn-view'}" onclick="toggleMemberNotifications('${member.id}', ${member.wants_notifications ? 'false' : 'true'})">
+            <i class="fas ${member.wants_notifications ? 'fa-bell-slash' : 'fa-bell'}"></i>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderSubscribersTable() {
+    const tbody = document.getElementById('subscribersTableBody');
+    if (!tbody) return;
+    if (!filteredSubscribers.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#6c757d">لا يوجد مشتركون مطابقون</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filteredSubscribers.map(sub => `
+      <tr>
+        <td><strong>${sub.full_name || 'مشترك بريد'}</strong></td>
+        <td>${sub.email}</td>
+        <td>${sub.source || '-'}</td>
+        <td>${sub.is_active ? '<span class="badge badge-success">نشط</span>' : '<span class="badge badge-danger">متوقف</span>'}</td>
+        <td>${formatDateShort(sub.created_at)}</td>
+        <td>
+          <div class="order-row-actions">
+            <button class="btn-action btn-view" onclick="editSubscriber('${sub.id}')"><i class="fas fa-edit"></i></button>
+            <button class="btn-action ${sub.is_active ? 'btn-edit-status' : 'btn-view'}" onclick="toggleSubscriberStatus('${sub.id}', ${sub.is_active ? 'false' : 'true'})"><i class="fas ${sub.is_active ? 'fa-toggle-on' : 'fa-toggle-off'}"></i></button>
+            <button class="btn-action btn-del" onclick="deleteSubscriber('${sub.id}')"><i class="fas fa-trash"></i></button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async function toggleMemberNotifications(id, enabled) {
+    try {
+      await apiPatch('members', id, { wants_notifications: enabled });
+      showToast(enabled ? 'تم تفعيل إشعارات العضو' : 'تم إيقاف إشعارات العضو', 'success');
+      await loadSubscribersAdmin();
+    } catch (e) {
+      showToast('تعذر تحديث حالة إشعارات العضو', 'error');
+    }
+  }
+
+  function showAddSubscriberModal() {
+    document.getElementById('subscriberModalTitle').textContent = 'إضافة مشترك بريد';
+    document.getElementById('editSubscriberId').value = '';
+    document.getElementById('subscriberName').value = '';
+    document.getElementById('subscriberEmail').value = '';
+    document.getElementById('subscriberSource').value = 'admin';
+    document.getElementById('subscriberActive').checked = true;
+    openModal('addSubscriberModal');
+  }
+
+  function editSubscriber(id) {
+    const sub = allSubscribers.find(item => item.id === id);
+    if (!sub) return;
+    document.getElementById('subscriberModalTitle').textContent = 'تعديل مشترك البريد';
+    document.getElementById('editSubscriberId').value = id;
+    document.getElementById('subscriberName').value = sub.full_name || '';
+    document.getElementById('subscriberEmail').value = sub.email || '';
+    document.getElementById('subscriberSource').value = sub.source || 'admin';
+    document.getElementById('subscriberActive').checked = !!sub.is_active;
+    openModal('addSubscriberModal');
+  }
+
+  async function saveSubscriber() {
+    const email = document.getElementById('subscriberEmail').value.trim();
+    const payload = {
+      full_name: document.getElementById('subscriberName').value.trim(),
+      email,
+      source: document.getElementById('subscriberSource').value,
+      is_active: document.getElementById('subscriberActive').checked
+    };
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('يرجى إدخال بريد إلكتروني صحيح', 'warning');
+      return;
+    }
+    const editId = document.getElementById('editSubscriberId').value;
+    const duplicate = allSubscribers.find(sub => String(sub.email || '').trim().toLowerCase() === email.toLowerCase() && sub.id !== editId);
+    if (duplicate) {
+      showToast('هذا البريد مسجل مسبقاً ضمن المشتركين', 'warning');
+      return;
+    }
+    try {
+      if (editId) {
+        await apiUpdate('newsletter_subscribers', editId, payload);
+        showToast('تم تحديث المشترك', 'success');
+      } else {
+        await apiCreate('newsletter_subscribers', payload);
+        showToast('تمت إضافة المشترك بنجاح', 'success');
+      }
+      closeModal('addSubscriberModal');
+      await loadSubscribersAdmin();
+    } catch (e) {
+      showToast(e.message || 'تعذر حفظ المشترك', 'error');
+    }
+  }
+
+  async function toggleSubscriberStatus(id, enabled) {
+    try {
+      await apiPatch('newsletter_subscribers', id, { is_active: enabled });
+      showToast(enabled ? 'تم تفعيل المشترك' : 'تم إيقاف المشترك', 'success');
+      await loadSubscribersAdmin();
+    } catch (e) {
+      showToast('تعذر تحديث حالة المشترك', 'error');
+    }
+  }
+
+  async function deleteSubscriber(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا المشترك؟')) return;
+    try {
+      await apiDelete('newsletter_subscribers', id);
+      showToast('تم حذف المشترك', 'success');
+      await loadSubscribersAdmin();
+    } catch (e) {
+      showToast('تعذر حذف المشترك', 'error');
+    }
+  }
+
+  async function sendNewsletterEmails() {
+    const subject = document.getElementById('notifEmailSubject').value.trim();
+    const message = document.getElementById('notifEmailMessage').value.trim();
+    const cta_link = document.getElementById('notifEmailLink').value.trim();
+    if (!subject || !message) {
+      showToast('يرجى كتابة عنوان الرسالة ونص البريد', 'warning');
+      return;
+    }
+    try {
+      const result = await requestJSON('/api/notifications/subscribers', {
+        method: 'POST',
+        body: JSON.stringify({ subject, message, cta_link, cta_label: 'عرض التفاصيل' })
+      });
+      notifHistory.unshift({
+        id: Date.now(),
+        to: 'المشتركون',
+        channel: '📧 بريد إلكتروني',
+        meta: `${result.count || 0} مستلم`,
+        message: `${subject}
+
+${message}`,
+        time: new Date().toLocaleString('ar-YE'),
+        status: 'تم الإرسال'
+      });
+      renderNotifHistory();
+      showToast(`تم إرسال البريد إلى ${result.count || 0} مشترك`, 'success');
+    } catch (e) {
+      showToast(e.message || 'تعذر إرسال البريد للمشتركين', 'error');
+    }
+  }
+
+  function previewNewsletterEmail() {
+    const subject = document.getElementById('notifEmailSubject').value.trim();
+    const message = document.getElementById('notifEmailMessage').value.trim();
+    if (!subject || !message) {
+      showToast('يرجى إدخال عنوان الرسالة ونص البريد أولاً', 'warning');
+      return;
+    }
+    alert(`عنوان البريد:
+${subject}
+
+نص الرسالة:
+${message}`);
   }
 
   // ===================
@@ -1750,6 +2174,7 @@
     if (!ok) return;
     loadDashboard();
     loadCustomers();
+    loadSubscribersAdmin();
     loadModerationSettings();
   });
 </script>

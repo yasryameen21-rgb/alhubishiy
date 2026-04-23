@@ -22,8 +22,8 @@ const DB_PATH = path.join(DATA_DIR, 'alhabeshi.sqlite');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 app.use(cookieParser());
 app.use(express.static(__dirname, { extensions: ['html'] }));
 
@@ -58,12 +58,13 @@ const DEFAULT_SPORTS_SOURCES = [
 ];
 
 const allowedTables = {
-  products: ['id','name','category','price','unit','stock','is_new','discount','icon','description','created_at','updated_at','search_name'],
+  products: ['id','name','category','price','unit','stock','is_new','discount','icon','description','image_url','external_link','created_at','updated_at','search_name'],
   orders: ['id','customer_name','phone','is_member','member_id','items','total','status','notes','order_mode','delivery_address','delivery_time','payment_method','payment_reference','notification_email','order_date','created_at','updated_at'],
   customers: ['id','name','phone','address','balance','is_member','email','created_at','updated_at','search_name'],
   offers: ['id','title','description','discount_percent','is_active','type','created_at','updated_at'],
   chat_messages: ['id','sender_name','message','is_admin','created_at'],
-  members: ['id','full_name','phone','email','password_hash','is_active','created_at','updated_at','search_name'],
+  members: ['id','full_name','phone','email','password_hash','is_active','wants_notifications','created_at','updated_at','search_name'],
+  newsletter_subscribers: ['id','full_name','email','source','is_active','created_at','updated_at'],
   sports_sources: ['id','name','url','is_active','created_at','updated_at'],
   sports_articles: ['id','source_name','title','summary','link','published_at','image_url','guid','created_at','search_title'],
   admin_users: ['id','email','password_hash','display_name','created_at','updated_at']
@@ -181,6 +182,158 @@ async function setupTransporter() {
   }
 }
 
+
+async function ensureColumn(table, column, definition) {
+  const cols = await db.all(`PRAGMA table_info(${table})`);
+  if (!cols.some(col => col.name === column)) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+async function upsertNewsletterSubscriber(fullName, email, source = 'page') {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  const timestamp = now();
+  const existing = await queryOne('SELECT * FROM newsletter_subscribers WHERE email = ?', [normalizedEmail]);
+  if (existing) {
+    await run('UPDATE newsletter_subscribers SET full_name = ?, source = ?, is_active = 1, updated_at = ? WHERE email = ?', [fullName || existing.full_name || '', source, timestamp, normalizedEmail]);
+    return queryOne('SELECT * FROM newsletter_subscribers WHERE email = ?', [normalizedEmail]);
+  }
+  const id = slugId();
+  await run('INSERT INTO newsletter_subscribers (id,full_name,email,source,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', [id, fullName || '', normalizedEmail, source, 1, timestamp, timestamp]);
+  return queryOne('SELECT * FROM newsletter_subscribers WHERE id = ?', [id]);
+}
+
+async function collectNewsletterRecipients() {
+  const members = await queryAll(`
+    SELECT full_name, email, COALESCE(wants_notifications, 1) AS wants_notifications
+    FROM members
+    WHERE is_active = 1 AND email IS NOT NULL AND email <> ''
+  `);
+  const subscribers = await queryAll(`
+    SELECT full_name, email
+    FROM newsletter_subscribers
+    WHERE is_active = 1 AND email IS NOT NULL AND email <> ''
+  `);
+
+  const allowed = new Map();
+  const blocked = new Set();
+
+  members.forEach(row => {
+    const email = String(row.email || '').trim().toLowerCase();
+    if (!email) return;
+    if (Number(row.wants_notifications || 0) === 1) {
+      allowed.set(email, row.full_name || '');
+    } else {
+      blocked.add(email);
+      allowed.delete(email);
+    }
+  });
+
+  subscribers.forEach(row => {
+    const email = String(row.email || '').trim().toLowerCase();
+    if (!email || blocked.has(email) || allowed.has(email)) return;
+    allowed.set(email, row.full_name || '');
+  });
+
+  return Array.from(allowed.keys());
+}
+
+async function sendNewProductNotification(product) {
+  if (!transporter || !transporterReady) return { sent: false, reason: 'smtp_not_configured' };
+  const recipients = await collectNewsletterRecipients();
+  if (!recipients.length) return { sent: false, reason: 'no_recipients' };
+
+  const siteBase = BASE_URL ? BASE_URL.replace(/\/$/, '') : '';
+  const productLink = siteBase ? `${siteBase}/new-products.html` : '#';
+  const safeImage = product.image_url && !String(product.image_url).startsWith('data:') ? product.image_url : '';
+  const html = `
+    <div style="font-family:Arial,sans-serif;direction:rtl;text-align:right;line-height:1.8;background:#f7fafc;padding:20px">
+      <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e6eef4">
+        <div style="background:linear-gradient(135deg,#1a5276,#2e86c1);padding:24px;color:#fff">
+          <div style="font-size:26px;font-weight:800;margin-bottom:6px">🆕 منتج جديد في محلات الحبيشي</div>
+          <div style="opacity:.92">تمت إضافة منتج جديد ويمكنك الاطلاع عليه الآن من خلال الموقع</div>
+        </div>
+        <div style="padding:24px">
+          ${safeImage ? `<img src="${safeImage}" alt="${product.name}" style="width:100%;max-height:280px;object-fit:cover;border-radius:14px;margin-bottom:16px">` : ''}
+          <h2 style="margin:0 0 12px;color:#1a5276">${product.name}</h2>
+          <p style="margin:6px 0"><strong>السعر:</strong> ${Number(product.price || 0).toLocaleString('ar-YE')} ريال</p>
+          <p style="margin:6px 0"><strong>الكمية المتاحة:</strong> ${Number(product.stock || 0).toLocaleString('ar-YE')}</p>
+          <p style="margin:6px 0"><strong>الفئة:</strong> ${product.category || 'منتج جديد'}</p>
+          <p style="margin:6px 0"><strong>الملاحظة:</strong> ${product.description || 'تمت إضافة المنتج حديثاً وهو متوفر حالياً داخل الموقع.'}</p>
+          <div style="margin-top:18px">
+            <a href="${productLink}" style="display:inline-block;background:#f39c12;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700">عرض الأصناف الجديدة</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const chunkSize = 40;
+  for (let i = 0; i < recipients.length; i += chunkSize) {
+    const batch = recipients.slice(i, i + chunkSize);
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: OWNER_EMAIL,
+      bcc: batch,
+      subject: `منتج جديد: ${product.name}`,
+      html
+    });
+  }
+
+  return { sent: true, count: recipients.length };
+}
+
+async function sendSubscriberCampaign({ subject, message, ctaLink = '', ctaLabel = 'زيارة الموقع' }) {
+  if (!transporter || !transporterReady) {
+    return { sent: false, reason: 'smtp_not_configured', count: 0 };
+  }
+
+  const recipients = await collectNewsletterRecipients();
+  if (!recipients.length) {
+    return { sent: false, reason: 'no_recipients', count: 0 };
+  }
+
+  const safeSubject = String(subject || '').trim();
+  const safeMessage = String(message || '').trim();
+  const safeLink = String(ctaLink || '').trim();
+  if (!safeSubject || !safeMessage) {
+    return { sent: false, reason: 'invalid_payload', count: 0 };
+  }
+
+  const finalLink = safeLink || (BASE_URL ? `${BASE_URL.replace(/\/$/, '')}/new-products.html` : '');
+  const safeCtaLabel = String(ctaLabel || 'زيارة الموقع').trim() || 'زيارة الموقع';
+  const html = `
+    <div style="font-family:Arial,sans-serif;direction:rtl;text-align:right;line-height:1.8;background:#f7fafc;padding:20px">
+      <div style="max-width:680px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e6eef4">
+        <div style="background:linear-gradient(135deg,#1a5276,#2e86c1);padding:24px;color:#fff">
+          <div style="font-size:26px;font-weight:800;margin-bottom:6px">📢 إشعار من محلات الحبيشي</div>
+          <div style="opacity:.92">رسالة جديدة للمشتركين في الصفحة والبريد الإلكتروني</div>
+        </div>
+        <div style="padding:24px">
+          <h2 style="margin:0 0 14px;color:#1a5276">${safeSubject}</h2>
+          <div style="white-space:pre-line;color:#243447;font-size:15px">${safeMessage}</div>
+          ${finalLink ? `<div style="margin-top:20px"><a href="${finalLink}" style="display:inline-block;background:#f39c12;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700">${safeCtaLabel}</a></div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const chunkSize = 40;
+  for (let i = 0; i < recipients.length; i += chunkSize) {
+    const batch = recipients.slice(i, i + chunkSize);
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: OWNER_EMAIL,
+      bcc: batch,
+      subject: safeSubject,
+      html
+    });
+  }
+
+  return { sent: true, count: recipients.length };
+}
+
 async function sendOrderEmail(order) {
   if (!transporter || !transporterReady) return { sent: false, reason: 'smtp_not_configured' };
   let items = [];
@@ -288,6 +441,8 @@ async function initDb() {
       discount REAL DEFAULT 0,
       icon TEXT,
       description TEXT,
+      image_url TEXT,
+      external_link TEXT,
       created_at TEXT,
       updated_at TEXT,
       search_name TEXT
@@ -348,9 +503,19 @@ async function initDb() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       is_active INTEGER DEFAULT 1,
+      wants_notifications INTEGER DEFAULT 1,
       created_at TEXT,
       updated_at TEXT,
       search_name TEXT
+    );
+    CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+      id TEXT PRIMARY KEY,
+      full_name TEXT,
+      email TEXT UNIQUE NOT NULL,
+      source TEXT DEFAULT 'page',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
     );
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -384,8 +549,13 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_products_search_name ON products(search_name);
     CREATE INDEX IF NOT EXISTS idx_customers_search_name ON customers(search_name);
     CREATE INDEX IF NOT EXISTS idx_members_search_name ON members(search_name);
+    CREATE INDEX IF NOT EXISTS idx_newsletter_email ON newsletter_subscribers(email);
     CREATE INDEX IF NOT EXISTS idx_sports_articles_published_at ON sports_articles(published_at);
   `);
+
+  await ensureColumn('products', 'image_url', 'TEXT');
+  await ensureColumn('products', 'external_link', 'TEXT');
+  await ensureColumn('members', 'wants_notifications', 'INTEGER DEFAULT 1');
 
   await seedIfEmpty();
 }
@@ -490,7 +660,7 @@ app.post('/api/auth/admin/logout', (req, res) => {
 });
 
 app.post('/api/members/register', async (req, res) => {
-  const { full_name, phone, email, password } = req.body || {};
+  const { full_name, phone, email, password, wants_notifications } = req.body || {};
   if (!full_name || !email || !password || String(password).length < 6) {
     return res.status(400).json({ error: 'يرجى إكمال البيانات وكلمة المرور لا تقل عن 6 أحرف' });
   }
@@ -500,10 +670,12 @@ app.post('/api/members/register', async (req, res) => {
   const id = slugId();
   const timestamp = now();
   const password_hash = await bcrypt.hash(String(password), 10);
-  await run(`INSERT INTO members (id,full_name,phone,email,password_hash,is_active,created_at,updated_at,search_name)
-    VALUES (?,?,?,?,?,?,?,?,?)`, [id, full_name, phone || '', normalizedEmail, password_hash, 1, timestamp, timestamp, normalizeArabic(full_name)]);
+  const wantsNotifications = wants_notifications === undefined ? 1 : (wants_notifications ? 1 : 0);
+  await run(`INSERT INTO members (id,full_name,phone,email,password_hash,is_active,wants_notifications,created_at,updated_at,search_name)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`, [id, full_name, phone || '', normalizedEmail, password_hash, 1, wantsNotifications, timestamp, timestamp, normalizeArabic(full_name)]);
+  if (wantsNotifications) await upsertNewsletterSubscriber(full_name, normalizedEmail, 'member');
   authCookie(res, 'member_token', { id, role: 'member', email: normalizedEmail });
-  res.json({ success: true, member: { id, full_name, phone, email: normalizedEmail } });
+  res.json({ success: true, member: { id, full_name, phone, email: normalizedEmail, wants_notifications: !!wantsNotifications } });
 });
 
 app.post('/api/members/login', async (req, res) => {
@@ -513,13 +685,13 @@ app.post('/api/members/login', async (req, res) => {
   const ok = await bcrypt.compare(String(password || ''), member.password_hash);
   if (!ok) return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
   authCookie(res, 'member_token', { id: member.id, role: 'member', email: member.email });
-  res.json({ success: true, member: { id: member.id, full_name: member.full_name, phone: member.phone, email: member.email } });
+  res.json({ success: true, member: { id: member.id, full_name: member.full_name, phone: member.phone, email: member.email, wants_notifications: !!member.wants_notifications } });
 });
 
 app.get('/api/members/me', async (req, res) => {
   const payload = getTokenPayload(req, 'member_token');
   if (!payload) return res.status(401).json({ authenticated: false });
-  const member = await queryOne('SELECT id,full_name,phone,email,created_at FROM members WHERE id = ?', [payload.id]);
+  const member = await queryOne('SELECT id,full_name,phone,email,wants_notifications,created_at FROM members WHERE id = ?', [payload.id]);
   if (!member) return res.status(401).json({ authenticated: false });
   res.json({ authenticated: true, member });
 });
@@ -527,6 +699,49 @@ app.get('/api/members/me', async (req, res) => {
 app.post('/api/members/logout', (req, res) => {
   clearAuthCookie(res, 'member_token');
   res.json({ success: true });
+});
+
+
+app.post('/api/newsletter/subscribe', async (req, res) => {
+  const { full_name, email } = req.body || {};
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صحيح' });
+  }
+
+  const row = await upsertNewsletterSubscriber(String(full_name || '').trim(), normalizedEmail, 'page');
+  res.json({ success: true, subscriber: row });
+});
+
+app.post('/api/notifications/subscribers', requireAdmin, async (req, res) => {
+  const { subject, message, cta_link, cta_label } = req.body || {};
+  if (!String(subject || '').trim() || !String(message || '').trim()) {
+    return res.status(400).json({ error: 'عنوان الرسالة ونصها مطلوبان' });
+  }
+
+  try {
+    const result = await sendSubscriberCampaign({
+      subject: String(subject).trim(),
+      message: String(message).trim(),
+      ctaLink: String(cta_link || '').trim(),
+      ctaLabel: String(cta_label || '').trim() || 'زيارة الموقع'
+    });
+
+    if (!result.sent && result.reason === 'smtp_not_configured') {
+      return res.status(503).json({ error: 'خدمة البريد غير مفعلة حالياً. يرجى إعداد SMTP أولاً.' });
+    }
+    if (!result.sent && result.reason === 'no_recipients') {
+      return res.status(400).json({ error: 'لا يوجد مشتركون نشطون لإرسال الرسالة لهم' });
+    }
+    if (!result.sent) {
+      return res.status(400).json({ error: 'تعذر إرسال الرسالة حالياً' });
+    }
+
+    res.json({ success: true, count: result.count });
+  } catch (err) {
+    console.error('Subscriber campaign failed:', err);
+    res.status(500).json({ error: 'حدث خطأ أثناء إرسال البريد للمشتركين' });
+  }
 });
 
 app.get('/api/sports/articles', async (req, res) => {
@@ -602,6 +817,9 @@ app.get('/tables/:table', async (req, res) => {
     } else if (table === 'members') {
       sql += ' WHERE search_name LIKE ? OR full_name LIKE ? OR email LIKE ?';
       params.push(`%${normalizeArabic(q)}%`, `%${q}%`, `%${q}%`);
+    } else if (table === 'newsletter_subscribers') {
+      sql += ' WHERE full_name LIKE ? OR email LIKE ? OR source LIKE ?';
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`);
     }
   }
   sql += ` ORDER BY ${sort} ${order} LIMIT ?`;
@@ -649,6 +867,19 @@ app.post('/tables/:table', async (req, res) => {
     }
     if (table === 'customers') payload.is_member = payload.is_member ? 1 : 0;
     if (table === 'products') payload.is_new = payload.is_new ? 1 : 0;
+    if (table === 'members') {
+      payload.wants_notifications = payload.wants_notifications === undefined ? 1 : (payload.wants_notifications ? 1 : 0);
+      if (payload.email) payload.email = String(payload.email).trim().toLowerCase();
+    }
+    if (table === 'newsletter_subscribers') {
+      payload.email = String(payload.email || '').trim().toLowerCase();
+      payload.full_name = String(payload.full_name || '').trim();
+      payload.source = String(payload.source || 'admin').trim() || 'admin';
+      payload.is_active = payload.is_active === undefined ? 1 : (payload.is_active ? 1 : 0);
+      if (!payload.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) {
+        return res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صحيح' });
+      }
+    }
     if (table === 'offers') payload.is_active = payload.is_active ? 1 : 0;
 
     const cols = ['id', ...Object.keys(payload), 'created_at'];
@@ -663,6 +894,9 @@ app.post('/tables/:table', async (req, res) => {
     if (table === 'orders') {
       await ensureCustomerFromOrder(row);
       try { await sendOrderEmail(row); } catch (err) { console.warn('Order email failed:', err.message); }
+    }
+    if (table === 'products') {
+      try { await sendNewProductNotification(row); } catch (err) { console.warn('Product notification failed:', err.message); }
     }
 
     res.json(row);
@@ -679,6 +913,19 @@ app.put('/tables/:table/:id', requireAdmin, async (req, res) => {
     const existing = await queryOne(`SELECT * FROM ${table} WHERE id = ?`, [id]);
     if (!existing) return res.status(404).json({ error: 'غير موجود' });
     const payload = filterColumns(table, req.body || {});
+    if (table === 'members' && 'wants_notifications' in payload) payload.wants_notifications = payload.wants_notifications ? 1 : 0;
+    if (table === 'members' && 'email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
+    if (table === 'newsletter_subscribers') {
+      if ('email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
+      if ('full_name' in payload) payload.full_name = String(payload.full_name || '').trim();
+      if ('source' in payload) payload.source = String(payload.source || 'admin').trim() || 'admin';
+      if ('is_active' in payload) payload.is_active = payload.is_active ? 1 : 0;
+      const testEmail = 'email' in payload ? payload.email : String(existing.email || '').trim().toLowerCase();
+      if (!testEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testEmail)) {
+        return res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صحيح' });
+      }
+    }
+    if (table === 'offers' && 'is_active' in payload) payload.is_active = payload.is_active ? 1 : 0;
     const merged = { ...existing, ...payload };
     const updateCols = Object.keys(payload);
     if (!updateCols.length) return res.json(existing);
@@ -700,6 +947,19 @@ app.patch('/tables/:table/:id', requireAdmin, async (req, res) => {
     const existing = await queryOne(`SELECT * FROM ${table} WHERE id = ?`, [id]);
     if (!existing) return res.status(404).json({ error: 'غير موجود' });
     const payload = filterColumns(table, req.body || {});
+    if (table === 'members' && 'wants_notifications' in payload) payload.wants_notifications = payload.wants_notifications ? 1 : 0;
+    if (table === 'members' && 'email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
+    if (table === 'newsletter_subscribers') {
+      if ('email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
+      if ('full_name' in payload) payload.full_name = String(payload.full_name || '').trim();
+      if ('source' in payload) payload.source = String(payload.source || 'admin').trim() || 'admin';
+      if ('is_active' in payload) payload.is_active = payload.is_active ? 1 : 0;
+      const testEmail = 'email' in payload ? payload.email : String(existing.email || '').trim().toLowerCase();
+      if (!testEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testEmail)) {
+        return res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صحيح' });
+      }
+    }
+    if (table === 'offers' && 'is_active' in payload) payload.is_active = payload.is_active ? 1 : 0;
     const keys = Object.keys(payload);
     if (!keys.length) return res.json(existing);
     keys.push('updated_at');

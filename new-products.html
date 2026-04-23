@@ -339,9 +339,10 @@
   <!-- اشتراك الإشعارات -->
   <div class="newsletter-card">
     <h3>🔔 أبقَ على اطّلاع بأحدث المنتجات</h3>
-    <p>أدخل رقم جوالك لتصلك إشعارات بالمنتجات الجديدة والعروض الحصرية</p>
-    <div class="newsletter-form">
-      <input type="tel" id="notifPhone" placeholder="أدخل رقم جوالك...">
+    <p>سجل اسمك وبريدك الإلكتروني لتصلك إشعارات المنتجات الجديدة والعروض الحصرية مباشرةً</p>
+    <div class="newsletter-form" style="max-width:760px;flex-wrap:wrap;justify-content:center;">
+      <input type="text" id="notifName" placeholder="اسمك">
+      <input type="email" id="notifEmail" placeholder="بريدك الإلكتروني...">
       <button class="btn btn-secondary" onclick="subscribeNotifs()">
         <i class="fas fa-bell"></i> اشترك
       </button>
@@ -468,20 +469,40 @@
     else window.location.href = 'order.html';
   }
 
-  function subscribeNotifs() {
-    const phone = document.getElementById('notifPhone').value.trim();
-    if (!validateYemenPhone(phone)) {
-      showToast('يرجى إدخال رقم جوال يمني صحيح', 'warning');
+  async function subscribeNotifs() {
+    const full_name = document.getElementById('notifName').value.trim();
+    const email = document.getElementById('notifEmail').value.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('يرجى إدخال بريد إلكتروني صحيح', 'warning');
       return;
     }
-    localStorage.setItem('hiba_new_products_phone', phone);
-    showToast(`تم تسجيل ${phone} لاستلام الإشعارات! 🔔`, 'success', 5000);
-    document.getElementById('notifPhone').value = '';
+    try {
+      await requestJSON('/api/newsletter/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({ full_name, email })
+      });
+      localStorage.setItem('hiba_newsletter_name', full_name);
+      localStorage.setItem('hiba_newsletter_email', email);
+      showToast(`تم تسجيل ${email} لاستلام الإشعارات البريدية`, 'success', 5000);
+      document.getElementById('notifName').value = '';
+      document.getElementById('notifEmail').value = '';
+    } catch (e) {
+      showToast(e.message || 'تعذر حفظ الاشتراك', 'error');
+    }
   }
 
-  window.addEventListener('DOMContentLoaded', () => {
-    const savedPhone = localStorage.getItem('hiba_new_products_phone');
-    if (savedPhone) document.getElementById('notifPhone').value = savedPhone;
+  window.addEventListener('DOMContentLoaded', async () => {
+    const savedName = localStorage.getItem('hiba_newsletter_name');
+    const savedEmail = localStorage.getItem('hiba_newsletter_email');
+    if (savedName) document.getElementById('notifName').value = savedName;
+    if (savedEmail) document.getElementById('notifEmail').value = savedEmail;
+    if (typeof refreshMemberSession === 'function') {
+      await refreshMemberSession();
+      if (window.__memberSession) {
+        document.getElementById('notifName').value = document.getElementById('notifName').value || (window.__memberSession.full_name || '');
+        document.getElementById('notifEmail').value = document.getElementById('notifEmail').value || (window.__memberSession.email || '');
+      }
+    }
     loadNewProducts();
   });
 </script>
