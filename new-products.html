@@ -346,6 +346,12 @@
       <button class="btn btn-secondary" onclick="subscribeNotifs()">
         <i class="fas fa-bell"></i> اشترك
       </button>
+      <button class="btn btn-outline" onclick="unsubscribeNotifs()">
+        <i class="fas fa-bell-slash"></i> إلغاء الاشتراك
+      </button>
+      <button class="btn btn-outline" onclick="logoutCurrentPageMember()">
+        <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
+      </button>
     </div>
   </div>
 
@@ -357,7 +363,7 @@
   <div class="footer-grid">
     <div class="footer-section">
       <h4>🏪 محلات الحبيشي</h4>
-      <p>وجهتك الأولى لمواد البناء والسباكة والكهرباء في إب والمنطقة.</p>
+      <p><span class="store-description-target">وجهتك الأولى لمواد البناء والسباكة والكهرباء ومستلزمات الورش والأسمنت والمستلزمات الطبية في إب والمنطقة.</span></p>
     </div>
     <div class="footer-section">
       <h4>🔗 روابط سريعة</h4>
@@ -365,6 +371,15 @@
       <a href="order.html">اطلب الآن</a>
       <a href="offers.html">العروض</a>
       <a href="about.html">عن المحل</a>
+    </div>
+    <div class="footer-section">
+      <h4>🧾 التصنيفات</h4>
+      <p>مواد البناء</p>
+      <p>السباكة</p>
+      <p>الكهرباء</p>
+      <p>أدوات الورشة</p>
+      <p>الأسمنت</p>
+      <p>مستلزمات طبية</p>
     </div>
   </div>
   <div class="footer-bottom"><p>© 2025 محلات الحبيشي | إب - اليمن</p></div>
@@ -377,7 +392,7 @@
   let currentFilterCat = 'all';
 
   const categoryIcons = {
-    'مواد البناء':'🧱','السباكة':'🚿','الكهرباء':'⚡','عدد ومعدات':'🔧','أخرى':'📦'
+    'مواد البناء':'🧱','السباكة':'🚿','الكهرباء':'⚡','عدد ومعدات':'🔧','أدوات الورشة':'🪛','الأسمنت':'🧱','مستلزمات طبية':'🩺','أخرى':'📦'
   };
 
   async function loadNewProducts() {
@@ -484,10 +499,27 @@
       localStorage.setItem('hiba_newsletter_name', full_name);
       localStorage.setItem('hiba_newsletter_email', email);
       showToast(`تم تسجيل ${email} لاستلام الإشعارات البريدية`, 'success', 5000);
-      document.getElementById('notifName').value = '';
-      document.getElementById('notifEmail').value = '';
     } catch (e) {
       showToast(e.message || 'تعذر حفظ الاشتراك', 'error');
+    }
+  }
+
+  async function unsubscribeNotifs() {
+    const email = document.getElementById('notifEmail').value.trim() || localStorage.getItem('hiba_newsletter_email') || window.__memberSession?.email || '';
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('أدخل البريد الإلكتروني المطلوب إلغاء اشتراكه', 'warning');
+      return;
+    }
+    try {
+      await requestJSON('/api/newsletter/unsubscribe', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+      localStorage.removeItem('hiba_newsletter_name');
+      localStorage.removeItem('hiba_newsletter_email');
+      showToast('تم إلغاء الاشتراك بنجاح', 'success');
+    } catch (e) {
+      showToast(e.message || 'تعذر إلغاء الاشتراك', 'error');
     }
   }
 

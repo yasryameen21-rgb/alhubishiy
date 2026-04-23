@@ -536,7 +536,7 @@
             </tr>
           </thead>
           <tbody id="customersTableBody">
-            <tr><td colspan="6" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
+            <tr><td colspan="8" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
           </tbody>
         </table>
       </div>
@@ -583,6 +583,10 @@
               <textarea id="notifEmailMessage" class="form-control" rows="5" placeholder="اكتب نص البريد الذي سيصل للمشتركين...
 مثال: وصلتنا منتجات جديدة وعروض حصرية، زوروا صفحة الأصناف الجديدة الآن."></textarea>
             </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label class="form-label">مستلمون محددون اختياريًا</label>
+              <textarea id="notifEmailRecipients" class="form-control" rows="3" placeholder="اتركه فارغًا للإرسال للجميع، أو اكتب بريدًا في كل سطر / افصل بالفواصل لإرسال طلب دفع أو إشعار لمشتركين محددين فقط"></textarea>
+            </div>
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
             <button class="btn btn-primary" onclick="sendNewsletterEmails()">
@@ -592,6 +596,22 @@
               <i class="fas fa-eye"></i> معاينة البريد
             </button>
             <span id="newsletterAudienceCount" style="color:#6c757d; font-size:.85rem;">جاري حساب عدد المستلمين...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-20">
+        <div class="card-header">
+          <i class="fas fa-store"></i> وصف المتجر الظاهر للزوار
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">وصف المتجر</label>
+            <textarea id="storeDescriptionInput" class="form-control" rows="4" placeholder="اكتب وصفًا مختصرًا قابلًا للتعديل من لوحة الإدارة"></textarea>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button class="btn btn-success" onclick="saveStoreDescriptionSettings()"><i class="fas fa-save"></i> حفظ الوصف</button>
+            <span id="storeDescriptionHint" style="color:#6c757d; font-size:.85rem;">سيظهر هذا الوصف في الصفحات العامة.</span>
           </div>
         </div>
       </div>
@@ -703,13 +723,15 @@
                 <th>الاسم</th>
                 <th>الجوال</th>
                 <th>البريد</th>
+                <th>الحالة</th>
                 <th>الإشعارات</th>
+                <th>الطلبات</th>
                 <th>تاريخ التسجيل</th>
-                <th>إجراء</th>
+                <th>الإجراءات</th>
               </tr>
             </thead>
             <tbody id="membersAdminTableBody">
-              <tr><td colspan="6" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
+              <tr><td colspan="8" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
             </tbody>
           </table>
         </div>
@@ -730,7 +752,7 @@
               </tr>
             </thead>
             <tbody id="subscribersTableBody">
-              <tr><td colspan="6" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
+              <tr><td colspan="8" style="text-align:center; padding:30px; color:#6c757d">جاري التحميل...</td></tr>
             </tbody>
           </table>
         </div>
@@ -804,6 +826,9 @@
             <option value="مواد البناء">مواد البناء</option>
             <option value="السباكة">السباكة</option>
             <option value="الكهرباء">الكهرباء</option>
+            <option value="أدوات الورشة">أدوات الورشة</option>
+            <option value="الأسمنت">الأسمنت</option>
+            <option value="مستلزمات طبية">مستلزمات طبية</option>
             <option value="عدد ومعدات">عدد ومعدات</option>
             <option value="أخرى">أخرى</option>
           </select>
@@ -1888,7 +1913,7 @@
     const tbody = document.getElementById('membersAdminTableBody');
     if (!tbody) return;
     if (!filteredMembers.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#6c757d">لا يوجد أعضاء مطابقون</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:#6c757d">لا يوجد أعضاء مطابقون</td></tr>';
       return;
     }
     tbody.innerHTML = filteredMembers.map(member => `
@@ -1896,12 +1921,22 @@
         <td><strong>${member.full_name || '-'}</strong></td>
         <td>${member.phone || '-'}</td>
         <td>${member.email || '-'}</td>
+        <td>${member.is_active ? '<span class="badge badge-success">نشط</span>' : '<span class="badge badge-danger">محظور</span>'}</td>
         <td>${member.wants_notifications ? '<span class="badge badge-success">🔔 مفعلة</span>' : '<span class="badge badge-dark">🔕 متوقفة</span>'}</td>
+        <td>${member.can_order !== 0 ? '<span class="badge badge-success">مسموحة</span>' : '<span class="badge badge-danger">موقوفة</span>'}</td>
         <td>${formatDateShort(member.created_at)}</td>
         <td>
-          <button class="btn-action ${member.wants_notifications ? 'btn-del' : 'btn-view'}" onclick="toggleMemberNotifications('${member.id}', ${member.wants_notifications ? 'false' : 'true'})">
-            <i class="fas ${member.wants_notifications ? 'fa-bell-slash' : 'fa-bell'}"></i>
-          </button>
+          <div class="order-row-actions">
+            <button class="btn-action ${member.wants_notifications ? 'btn-del' : 'btn-view'}" title="تفعيل أو إيقاف الإشعارات" onclick="toggleMemberNotifications('${member.id}', ${member.wants_notifications ? 'false' : 'true'})">
+              <i class="fas ${member.wants_notifications ? 'fa-bell-slash' : 'fa-bell'}"></i>
+            </button>
+            <button class="btn-action ${member.is_active ? 'btn-edit-status' : 'btn-view'}" title="حظر أو فك الحظر" onclick="toggleMemberActive('${member.id}', ${member.is_active ? 'false' : 'true'})">
+              <i class="fas ${member.is_active ? 'fa-user-slash' : 'fa-user-check'}"></i>
+            </button>
+            <button class="btn-action ${member.can_order !== 0 ? 'btn-del' : 'btn-view'}" title="إيقاف أو تفعيل الطلبات" onclick="toggleMemberOrders('${member.id}', ${member.can_order !== 0 ? 'false' : 'true'})">
+              <i class="fas ${member.can_order !== 0 ? 'fa-ban' : 'fa-cart-plus'}"></i>
+            </button>
+          </div>
         </td>
       </tr>
     `).join('');
@@ -1939,6 +1974,53 @@
       await loadSubscribersAdmin();
     } catch (e) {
       showToast('تعذر تحديث حالة إشعارات العضو', 'error');
+    }
+  }
+
+  async function toggleMemberActive(id, enabled) {
+    try {
+      await apiPatch('members', id, { is_active: enabled });
+      showToast(enabled ? 'تم فك حظر العضو' : 'تم حظر العضو', 'success');
+      await loadSubscribersAdmin();
+    } catch (e) {
+      showToast('تعذر تحديث حالة العضو', 'error');
+    }
+  }
+
+  async function toggleMemberOrders(id, enabled) {
+    try {
+      await apiPatch('members', id, { can_order: enabled });
+      showToast(enabled ? 'تم تفعيل الطلبات للمشترك' : 'تم إيقاف الطلبات لهذا المشترك', 'success');
+      await loadSubscribersAdmin();
+    } catch (e) {
+      showToast('تعذر تحديث صلاحية الطلبات', 'error');
+    }
+  }
+
+  async function loadStoreDescriptionSettings() {
+    try {
+      const data = await requestJSON('/api/store/settings', { method: 'GET' });
+      const input = document.getElementById('storeDescriptionInput');
+      if (input) input.value = data.store_description || '';
+    } catch (e) {
+      showToast('تعذر تحميل وصف المتجر', 'warning');
+    }
+  }
+
+  async function saveStoreDescriptionSettings() {
+    const store_description = document.getElementById('storeDescriptionInput').value.trim();
+    if (!store_description) {
+      showToast('يرجى كتابة وصف المتجر', 'warning');
+      return;
+    }
+    try {
+      await requestJSON('/api/store/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ store_description })
+      });
+      showToast('تم حفظ وصف المتجر', 'success');
+    } catch (e) {
+      showToast(e.message || 'تعذر حفظ وصف المتجر', 'error');
     }
   }
 
@@ -2022,6 +2104,11 @@
     const subject = document.getElementById('notifEmailSubject').value.trim();
     const message = document.getElementById('notifEmailMessage').value.trim();
     const cta_link = document.getElementById('notifEmailLink').value.trim();
+    const recipient_emails = (document.getElementById('notifEmailRecipients')?.value || '')
+      .split(/[
+,;]+/)
+      .map(v => v.trim())
+      .filter(Boolean);
     if (!subject || !message) {
       showToast('يرجى كتابة عنوان الرسالة ونص البريد', 'warning');
       return;
@@ -2029,11 +2116,11 @@
     try {
       const result = await requestJSON('/api/notifications/subscribers', {
         method: 'POST',
-        body: JSON.stringify({ subject, message, cta_link, cta_label: 'عرض التفاصيل' })
+        body: JSON.stringify({ subject, message, cta_link, cta_label: 'عرض التفاصيل', recipient_emails })
       });
       notifHistory.unshift({
         id: Date.now(),
-        to: 'المشتركون',
+        to: recipient_emails.length ? 'مشتركون محددون' : 'المشتركون',
         channel: '📧 بريد إلكتروني',
         meta: `${result.count || 0} مستلم`,
         message: `${subject}
@@ -2175,6 +2262,7 @@ ${message}`);
     loadDashboard();
     loadCustomers();
     loadSubscribersAdmin();
+    loadStoreDescriptionSettings();
     loadModerationSettings();
   });
 </script>

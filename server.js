@@ -63,7 +63,7 @@ const allowedTables = {
   customers: ['id','name','phone','address','balance','is_member','email','created_at','updated_at','search_name'],
   offers: ['id','title','description','discount_percent','is_active','type','created_at','updated_at'],
   chat_messages: ['id','sender_name','message','is_admin','created_at'],
-  members: ['id','full_name','phone','email','password_hash','is_active','wants_notifications','created_at','updated_at','search_name'],
+  members: ['id','full_name','phone','email','password_hash','is_active','can_order','wants_notifications','created_at','updated_at','search_name'],
   newsletter_subscribers: ['id','full_name','email','source','is_active','created_at','updated_at'],
   sports_sources: ['id','name','url','is_active','created_at','updated_at'],
   sports_articles: ['id','source_name','title','summary','link','published_at','image_url','guid','created_at','search_title'],
@@ -204,7 +204,7 @@ async function upsertNewsletterSubscriber(fullName, email, source = 'page') {
   return queryOne('SELECT * FROM newsletter_subscribers WHERE id = ?', [id]);
 }
 
-async function collectNewsletterRecipients() {
+async function collectNewsletterRecipients(targetEmails = []) {
   const members = await queryAll(`
     SELECT full_name, email, COALESCE(wants_notifications, 1) AS wants_notifications
     FROM members
@@ -218,6 +218,9 @@ async function collectNewsletterRecipients() {
 
   const allowed = new Map();
   const blocked = new Set();
+  const filterSet = Array.isArray(targetEmails) && targetEmails.length
+    ? new Set(targetEmails.map(email => String(email || '').trim().toLowerCase()).filter(Boolean))
+    : null;
 
   members.forEach(row => {
     const email = String(row.email || '').trim().toLowerCase();
@@ -236,12 +239,28 @@ async function collectNewsletterRecipients() {
     allowed.set(email, row.full_name || '');
   });
 
-  return Array.from(allowed.keys());
+  const recipients = Array.from(allowed.keys());
+  return filterSet ? recipients.filter(email => filterSet.has(email)) : recipients;
+}
+
+async function getStoreSetting(key, fallback = '') {
+  const row = await queryOne('SELECT value FROM store_settings WHERE key = ? LIMIT 1', [key]);
+  return row?.value ?? fallback;
+}
+
+async function setStoreSetting(key, value) {
+  const timestamp = now();
+  await run(`
+    INSERT INTO store_settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `, [key, String(value ?? ''), timestamp]);
+  return getStoreSetting(key, '');
 }
 
 async function sendNewProductNotification(product) {
   if (!transporter || !transporterReady) return { sent: false, reason: 'smtp_not_configured' };
-  const recipients = await collectNewsletterRecipients();
+  const recipients = await collectNewsletterRecipients(recipientEmails);
   if (!recipients.length) return { sent: false, reason: 'no_recipients' };
 
   const siteBase = BASE_URL ? BASE_URL.replace(/\/$/, '') : '';
@@ -284,7 +303,7 @@ async function sendNewProductNotification(product) {
   return { sent: true, count: recipients.length };
 }
 
-async function sendSubscriberCampaign({ subject, message, ctaLink = '', ctaLabel = 'زيارة الموقع' }) {
+async function sendSubscriberCampaign({ subject, message, ctaLink = '', ctaLabel = 'زيارة الموقع', recipientEmails = [] }) {
   if (!transporter || !transporterReady) {
     return { sent: false, reason: 'smtp_not_configured', count: 0 };
   }
@@ -545,6 +564,11 @@ async function initDb() {
       created_at TEXT,
       search_title TEXT
     );
+    CREATE TABLE IF NOT EXISTS store_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT
+    );
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_products_search_name ON products(search_name);
     CREATE INDEX IF NOT EXISTS idx_customers_search_name ON customers(search_name);
@@ -556,6 +580,11 @@ async function initDb() {
   await ensureColumn('products', 'image_url', 'TEXT');
   await ensureColumn('products', 'external_link', 'TEXT');
   await ensureColumn('members', 'wants_notifications', 'INTEGER DEFAULT 1');
+  await ensureColumn('members', 'can_order', 'INTEGER DEFAULT 1');
+  await run(
+    'INSERT OR IGNORE INTO store_settings (key, value, updated_at) VALUES (?, ?, ?)',
+    ['store_description', 'وجهتك الأولى لمواد البناء والسباكة والكهرباء ومستلزمات الورش والأسمنت والمستلزمات الطبية في إب والمنطقة.', now()]
+  );
 
   await seedIfEmpty();
 }
@@ -671,11 +700,11 @@ app.post('/api/members/register', async (req, res) => {
   const timestamp = now();
   const password_hash = await bcrypt.hash(String(password), 10);
   const wantsNotifications = wants_notifications === undefined ? 1 : (wants_notifications ? 1 : 0);
-  await run(`INSERT INTO members (id,full_name,phone,email,password_hash,is_active,wants_notifications,created_at,updated_at,search_name)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`, [id, full_name, phone || '', normalizedEmail, password_hash, 1, wantsNotifications, timestamp, timestamp, normalizeArabic(full_name)]);
+  await run(`INSERT INTO members (id,full_name,phone,email,password_hash,is_active,can_order,wants_notifications,created_at,updated_at,search_name)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [id, full_name, phone || '', normalizedEmail, password_hash, 1, 1, wantsNotifications, timestamp, timestamp, normalizeArabic(full_name)]);
   if (wantsNotifications) await upsertNewsletterSubscriber(full_name, normalizedEmail, 'member');
   authCookie(res, 'member_token', { id, role: 'member', email: normalizedEmail });
-  res.json({ success: true, member: { id, full_name, phone, email: normalizedEmail, wants_notifications: !!wantsNotifications } });
+  res.json({ success: true, member: { id, full_name, phone, email: normalizedEmail, wants_notifications: !!wantsNotifications, can_order: true, is_active: true } });
 });
 
 app.post('/api/members/login', async (req, res) => {
@@ -685,13 +714,13 @@ app.post('/api/members/login', async (req, res) => {
   const ok = await bcrypt.compare(String(password || ''), member.password_hash);
   if (!ok) return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
   authCookie(res, 'member_token', { id: member.id, role: 'member', email: member.email });
-  res.json({ success: true, member: { id: member.id, full_name: member.full_name, phone: member.phone, email: member.email, wants_notifications: !!member.wants_notifications } });
+  res.json({ success: true, member: { id: member.id, full_name: member.full_name, phone: member.phone, email: member.email, wants_notifications: !!member.wants_notifications, can_order: !!member.can_order, is_active: !!member.is_active } });
 });
 
 app.get('/api/members/me', async (req, res) => {
   const payload = getTokenPayload(req, 'member_token');
   if (!payload) return res.status(401).json({ authenticated: false });
-  const member = await queryOne('SELECT id,full_name,phone,email,wants_notifications,created_at FROM members WHERE id = ?', [payload.id]);
+  const member = await queryOne('SELECT id,full_name,phone,email,wants_notifications,is_active,can_order,created_at FROM members WHERE id = ?', [payload.id]);
   if (!member) return res.status(401).json({ authenticated: false });
   res.json({ authenticated: true, member });
 });
@@ -713,18 +742,50 @@ app.post('/api/newsletter/subscribe', async (req, res) => {
   res.json({ success: true, subscriber: row });
 });
 
+app.post('/api/newsletter/unsubscribe', async (req, res) => {
+  const normalizedEmail = String(req.body?.email || '').trim().toLowerCase();
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صحيح' });
+  }
+  const member = await queryOne('SELECT id FROM members WHERE email = ? LIMIT 1', [normalizedEmail]);
+  if (member) {
+    await run('UPDATE members SET wants_notifications = 0, updated_at = ? WHERE id = ?', [now(), member.id]);
+  }
+  await run('UPDATE newsletter_subscribers SET is_active = 0, updated_at = ? WHERE email = ?', [now(), normalizedEmail]);
+  res.json({ success: true });
+});
+
+app.get('/api/store/settings', async (_req, res) => {
+  const store_description = await getStoreSetting('store_description', 'وجهتك الأولى لمواد البناء والسباكة والكهرباء ومستلزمات الورش والأسمنت والمستلزمات الطبية في إب والمنطقة.');
+  res.json({ store_description });
+});
+
+app.patch('/api/store/settings', requireAdmin, async (req, res) => {
+  const description = String(req.body?.store_description || '').trim();
+  if (!description) {
+    return res.status(400).json({ error: 'وصف المتجر مطلوب' });
+  }
+  const value = await setStoreSetting('store_description', description);
+  res.json({ success: true, store_description: value });
+});
+
 app.post('/api/notifications/subscribers', requireAdmin, async (req, res) => {
-  const { subject, message, cta_link, cta_label } = req.body || {};
+  const { subject, message, cta_link, cta_label, recipient_emails } = req.body || {};
   if (!String(subject || '').trim() || !String(message || '').trim()) {
     return res.status(400).json({ error: 'عنوان الرسالة ونصها مطلوبان' });
   }
 
   try {
+    const selectedRecipients = Array.isArray(recipient_emails)
+      ? recipient_emails
+      : String(recipient_emails || '').split(/[\n,;]+/).map(v => v.trim()).filter(Boolean);
+
     const result = await sendSubscriberCampaign({
       subject: String(subject).trim(),
       message: String(message).trim(),
       ctaLink: String(cta_link || '').trim(),
-      ctaLabel: String(cta_label || '').trim() || 'زيارة الموقع'
+      ctaLabel: String(cta_label || '').trim() || 'زيارة الموقع',
+      recipientEmails: selectedRecipients
     });
 
     if (!result.sent && result.reason === 'smtp_not_configured') {
@@ -858,6 +919,12 @@ app.post('/tables/:table', async (req, res) => {
     if (table === 'orders') {
       payload.status = payload.status || 'جديد';
       payload.notification_email = payload.notification_email || OWNER_EMAIL;
+      if (payload.member_id) {
+        const member = await queryOne('SELECT id, is_active, COALESCE(can_order, 1) AS can_order FROM members WHERE id = ? LIMIT 1', [payload.member_id]);
+        if (member && (!Number(member.is_active) || !Number(member.can_order))) {
+          return res.status(403).json({ error: 'تم إيقاف استقبال الطلبات لهذا المشترك حالياً' });
+        }
+      }
     }
     if (table === 'chat_messages') {
       payload.message = String(payload.message || '').slice(0, 1000);
@@ -869,6 +936,7 @@ app.post('/tables/:table', async (req, res) => {
     if (table === 'products') payload.is_new = payload.is_new ? 1 : 0;
     if (table === 'members') {
       payload.wants_notifications = payload.wants_notifications === undefined ? 1 : (payload.wants_notifications ? 1 : 0);
+      payload.can_order = payload.can_order === undefined ? 1 : (payload.can_order ? 1 : 0);
       if (payload.email) payload.email = String(payload.email).trim().toLowerCase();
     }
     if (table === 'newsletter_subscribers') {
@@ -914,6 +982,7 @@ app.put('/tables/:table/:id', requireAdmin, async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'غير موجود' });
     const payload = filterColumns(table, req.body || {});
     if (table === 'members' && 'wants_notifications' in payload) payload.wants_notifications = payload.wants_notifications ? 1 : 0;
+    if (table === 'members' && 'can_order' in payload) payload.can_order = payload.can_order ? 1 : 0;
     if (table === 'members' && 'email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
     if (table === 'newsletter_subscribers') {
       if ('email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
@@ -948,6 +1017,7 @@ app.patch('/tables/:table/:id', requireAdmin, async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'غير موجود' });
     const payload = filterColumns(table, req.body || {});
     if (table === 'members' && 'wants_notifications' in payload) payload.wants_notifications = payload.wants_notifications ? 1 : 0;
+    if (table === 'members' && 'can_order' in payload) payload.can_order = payload.can_order ? 1 : 0;
     if (table === 'members' && 'email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
     if (table === 'newsletter_subscribers') {
       if ('email' in payload) payload.email = String(payload.email || '').trim().toLowerCase();
